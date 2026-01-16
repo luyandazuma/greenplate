@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GreenPlate - Discover Delicious Recipes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .recipe-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .recipe-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(52, 211, 153, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-green-50 to-emerald-50 min-h-screen">
+    <nav class="bg-emerald-100 shadow-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <h1 class="text-2xl font-bold text-emerald-600">🍽️ GreenPlate</h1>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="account.html" id="accountBtn" class="hidden text-emerald-600 hover:text-emerald-700 font-medium">My Account</a>
+                    <a href="login.html" id="loginBtn" class="px-4 py-2 text-emerald-600 hover:text-emerald-700 font-medium">Log In</a>
+                    <a href="register.html" id="registerBtn" class="px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition">Register</a>
+                    <button id="logoutBtn" class="hidden px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition">Logout</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <div class="text-center mb-12">
+            <h2 class="text-4xl font-bold text-gray-800 mb-4">Discover Your Next Favorite Recipe</h2>
+            <p class="text-lg text-gray-600 mb-8">Find delicious recipes with ingredient costs at your fingertips</p>
+            
+            <div class="max-w-2xl mx-auto mb-6">
+                <div class="relative">
+                    <input type="text" id="searchInput" placeholder="Search for recipes..." 
+                           class="w-full px-6 py-4 rounded-full border-2 border-emerald-300 focus:border-emerald-500 focus:outline-none text-lg">
+                    <button id="searchBtn" class="absolute right-2 top-2 px-6 py-2 bg-emerald-500 text-white rounded-full hover:bg-emerald-600 transition">
+                        Search
+                    </button>
+                </div>
+            </div>
+
+            
+        </div>
+
+        <div id="recipeGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"></div>
+        
+        <div id="loading" class="text-center py-12 hidden">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500"></div>
+            <p class="mt-4 text-gray-600">Loading delicious recipes...</p>
+        </div>
+    </div>
+
+    <div id="recipeModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-2xl max-w-3xl w-full p-8 relative max-h-screen overflow-y-auto">
+                <button id="closeModal" class="absolute top-4 right-4 text-gray-500 hover:text-gray-700 text-2xl">&times;</button>
+                <div id="modalContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
