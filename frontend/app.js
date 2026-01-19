@@ -1,5 +1,5 @@
-// GLOBAL CONFIGURATION
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '/api';
+//GLOBAL CONFIGURATION
+const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api';
 let currentUser = null;
 
 // UTILITY FUNCTIONS
@@ -289,6 +289,22 @@ function initIndexPage() {
     const randomBtn = document.getElementById('randomBtn');
     if (randomBtn) {
         randomBtn.addEventListener('click', loadRandomRecipe);
+    }
+    
+    // Set up generate recipe button
+    const generateBtn = document.getElementById('generateBtn');
+    const generateInput = document.getElementById('generateInput');
+    
+    if (generateBtn) {
+        generateBtn.addEventListener('click', generateRecipe);
+    }
+    
+    if (generateInput) {
+        generateInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                generateRecipe();
+            }
+        });
     }
     
     // Load initial recipes
@@ -674,9 +690,9 @@ async function removeRecipe(recipeId, type) {
     }
 }
 
-//  PAGE INITIALIZATION
+// PAGE INITIALIZATION
 
-// Detect which page we're on and initialize accordingly
+// Detect which page the user is on and initialize accordingly
 document.addEventListener('DOMContentLoaded', () => {
     const path = window.location.pathname;
     const page = path.substring(path.lastIndexOf('/') + 1) || 'index.html';
