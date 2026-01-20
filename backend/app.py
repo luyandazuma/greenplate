@@ -10,8 +10,16 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Secret key for JWT (use environment variable in production)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
+# Secret key for JWT
+# Generate a random secret key if not set
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    # Generate a random secret key for development
+    SECRET_KEY = secrets.token_hex(32)
+    print(f"   WARNING: Using auto-generated SECRET_KEY for development")
+    print(f"    For production, set SECRET_KEY environment variable")
+
+app.config['SECRET_KEY'] = SECRET_KEY
 
 # In-memory database (will be replaced with DynamoDB in AWS deployment)
 users_db = {}
@@ -19,6 +27,9 @@ saved_recipes_db = {}
 liked_recipes_db = {}
 
 # Sample recipe database (will be in DynamoDB in production)
+# Initialize with counter for new recipes
+recipe_id_counter = 7
+
 recipes_db = [
     {
         'id': 1,
@@ -337,8 +348,270 @@ def search_recipes():
 
 @app.route('/api/recipes/random', methods=['GET'])
 def random_recipe():
+    if not recipes_db:
+        return jsonify({'message': 'No recipes available'}), 404
     recipe = random.choice(recipes_db)
     return jsonify(recipe), 200
+
+
+# ============= RECIPE GENERATION ROUTES =============
+
+@app.route('/api/recipes/generate', methods=['POST'])
+def generate_recipe():
+    """
+    Generate a recipe based on user input
+    Accepts: dish name, ingredients list, or description
+    """
+    global recipe_id_counter
+    
+    data = request.json
+    user_input = data.get('input', '').strip()
+    
+    if not user_input:
+        return jsonify({'message': 'Please provide a recipe name or description'}), 400
+    
+    # Generate recipe based on user input
+    new_recipe = create_recipe_from_input(user_input, recipe_id_counter)
+    
+    # Add to database
+    recipes_db.append(new_recipe)
+    recipe_id_counter += 1
+    
+    return jsonify(new_recipe), 201
+
+
+def create_recipe_from_input(user_input, recipe_id):
+    """
+    Create a recipe structure based on user input
+    In production, this would use AI/ML service like Bedrock or OpenAI
+    For now, generates a structured recipe based on keywords
+    """
+    
+    # Parse input to determine recipe type
+    input_lower = user_input.lower()
+    
+    # Determine emoji based on keywords
+    emoji = determine_emoji(input_lower)
+    
+    # Generate recipe name
+    recipe_name = user_input.title() if len(user_input.split()) <= 5 else user_input.title()[:50]
+    
+    # Determine difficulty
+    difficulty = determine_difficulty(input_lower)
+    
+    # Determine cooking time
+    time = determine_time(input_lower, difficulty)
+    
+    # Generate ingredients based on input
+    ingredients = generate_ingredients(input_lower)
+    
+    # Calculate total cost
+    total_cost = sum(ing['cost'] for ing in ingredients)
+    
+    # Generate instructions
+    instructions = generate_instructions(input_lower, ingredients)
+    
+    # Determine servings
+    servings = determine_servings(input_lower)
+    
+    return {
+        'id': recipe_id,
+        'name': recipe_name,
+        'emoji': emoji,
+        'time': time,
+        'difficulty': difficulty,
+        'servings': servings,
+        'total_cost': round(total_cost, 2),
+        'ingredients': ingredients,
+        'instructions': instructions,
+        'user_generated': True
+    }
+
+
+def determine_emoji(text):
+    """Determine emoji based on recipe keywords"""
+    emoji_map = {
+        'pasta': '🍝', 'spaghetti': '🍝', 'noodle': '🍜',
+        'burger': '🍔', 'beef': '🍔',
+        'pizza': '🍕',
+        'salad': '🥗', 'vegetables': '🥗', 'greens': '🥗',
+        'soup': '🍲', 'stew': '🍲',
+        'chicken': '🍗', 'poultry': '🍗',
+        'fish': '🐟', 'seafood': '🦐', 'shrimp': '🦐',
+        'rice': '🍚', 'bowl': '🍱',
+        'taco': '🌮', 'burrito': '🌯',
+        'sandwich': '🥪',
+        'curry': '🍛',
+        'cake': '🎂', 'cookie': '🍪', 'dessert': '🍰',
+        'bread': '🍞', 'toast': '🍞',
+        'egg': '🥚', 'omelette': '🥚',
+        'bacon': '🥓',
+        'breakfast': '🍳',
+        'smoothie': '🥤', 'drink': '🥤',
+        'steak': '🥩', 'meat': '🥩'
+    }
+    
+    for keyword, emoji in emoji_map.items():
+        if keyword in text:
+            return emoji
+    
+    return '🍽️'  # Default
+
+
+def determine_difficulty(text):
+    """Determine difficulty based on keywords"""
+    if any(word in text for word in ['easy', 'simple', 'quick', 'basic']):
+        return 'Easy'
+    elif any(word in text for word in ['hard', 'complex', 'advanced', 'gourmet']):
+        return 'Hard'
+    else:
+        return 'Medium'
+
+
+def determine_time(text, difficulty):
+    """Estimate cooking time"""
+    if 'quick' in text or difficulty == 'Easy':
+        return f"{random.randint(10, 25)} min"
+    elif difficulty == 'Hard':
+        return f"{random.randint(45, 90)} min"
+    else:
+        return f"{random.randint(25, 50)} min"
+
+
+def determine_servings(text):
+    """Determine number of servings"""
+    if 'one' in text or 'single' in text or 'solo' in text:
+        return 1
+    elif 'two' in text or 'couple' in text:
+        return 2
+    elif 'family' in text or 'large' in text:
+        return 6
+    else:
+        return 4
+
+
+def generate_ingredients(text):
+    """Generate ingredient list based on recipe type"""
+    
+    # Common ingredients database
+    ingredient_database = {
+        'pasta': [
+            {'name': 'Pasta', 'amount': '400g', 'cost': 2.50},
+            {'name': 'Olive oil', 'amount': '3 tbsp', 'cost': 1.00},
+            {'name': 'Garlic', 'amount': '3 cloves', 'cost': 0.50},
+            {'name': 'Parmesan cheese', 'amount': '100g', 'cost': 3.50},
+            {'name': 'Salt and pepper', 'amount': 'To taste', 'cost': 0.30}
+        ],
+        'chicken': [
+            {'name': 'Chicken breast', 'amount': '500g', 'cost': 7.00},
+            {'name': 'Olive oil', 'amount': '2 tbsp', 'cost': 0.80},
+            {'name': 'Garlic powder', 'amount': '1 tsp', 'cost': 0.50},
+            {'name': 'Paprika', 'amount': '1 tsp', 'cost': 0.60},
+            {'name': 'Salt and pepper', 'amount': 'To taste', 'cost': 0.30}
+        ],
+        'salad': [
+            {'name': 'Mixed greens', 'amount': '300g', 'cost': 3.00},
+            {'name': 'Cherry tomatoes', 'amount': '200g', 'cost': 2.50},
+            {'name': 'Cucumber', 'amount': '1 large', 'cost': 1.20},
+            {'name': 'Olive oil', 'amount': '3 tbsp', 'cost': 1.00},
+            {'name': 'Lemon juice', 'amount': '2 tbsp', 'cost': 0.50}
+        ],
+        'rice': [
+            {'name': 'Rice', 'amount': '2 cups', 'cost': 2.00},
+            {'name': 'Chicken broth', 'amount': '4 cups', 'cost': 2.50},
+            {'name': 'Onion', 'amount': '1 medium', 'cost': 0.80},
+            {'name': 'Garlic', 'amount': '2 cloves', 'cost': 0.40},
+            {'name': 'Butter', 'amount': '2 tbsp', 'cost': 0.90}
+        ],
+        'soup': [
+            {'name': 'Vegetable broth', 'amount': '6 cups', 'cost': 3.00},
+            {'name': 'Mixed vegetables', 'amount': '500g', 'cost': 4.00},
+            {'name': 'Onion', 'amount': '1 large', 'cost': 1.00},
+            {'name': 'Garlic', 'amount': '3 cloves', 'cost': 0.50},
+            {'name': 'Herbs', 'amount': '1 tbsp', 'cost': 1.00}
+        ],
+        'sandwich': [
+            {'name': 'Bread', 'amount': '8 slices', 'cost': 2.50},
+            {'name': 'Deli meat', 'amount': '300g', 'cost': 5.00},
+            {'name': 'Cheese', 'amount': '4 slices', 'cost': 2.00},
+            {'name': 'Lettuce', 'amount': '4 leaves', 'cost': 0.80},
+            {'name': 'Tomato', 'amount': '1 large', 'cost': 1.20}
+        ]
+    }
+    
+    # Find matching category
+    for category, ingredients in ingredient_database.items():
+        if category in text:
+            return ingredients
+    
+    # Default generic ingredients
+    return [
+        {'name': 'Main ingredient', 'amount': '500g', 'cost': 6.00},
+        {'name': 'Olive oil', 'amount': '2 tbsp', 'cost': 0.80},
+        {'name': 'Garlic', 'amount': '2 cloves', 'cost': 0.40},
+        {'name': 'Onion', 'amount': '1 medium', 'cost': 0.80},
+        {'name': 'Herbs and spices', 'amount': 'To taste', 'cost': 1.50}
+    ]
+
+
+def generate_instructions(text, ingredients):
+    """Generate cooking instructions"""
+    
+    # Extract ingredient names for instructions
+    ingredient_names = [ing['name'].lower() for ing in ingredients]
+    
+    instructions = [
+        f"Gather all ingredients: {', '.join(ingredient_names[:3])} and others",
+        "Prepare your cooking area and preheat if needed"
+    ]
+    
+    # Add cooking steps based on recipe type
+    if 'pasta' in text or 'spaghetti' in text:
+        instructions.extend([
+            "Bring a large pot of salted water to boil",
+            "Cook pasta according to package directions until al dente",
+            "While pasta cooks, prepare the sauce in a separate pan",
+            "Drain pasta, reserving some pasta water",
+            "Combine pasta with sauce, adding pasta water if needed",
+            "Serve hot with grated cheese on top"
+        ])
+    elif 'salad' in text:
+        instructions.extend([
+            "Wash and dry all vegetables thoroughly",
+            "Chop vegetables into bite-sized pieces",
+            "Combine all vegetables in a large bowl",
+            "Prepare dressing by whisking oil and seasonings",
+            "Toss salad with dressing just before serving"
+        ])
+    elif 'soup' in text or 'stew' in text:
+        instructions.extend([
+            "Heat oil in a large pot over medium heat",
+            "Sauté aromatics until fragrant",
+            "Add main ingredients and cook briefly",
+            "Pour in broth and bring to a boil",
+            "Reduce heat and simmer for 20-30 minutes",
+            "Season to taste and serve hot"
+        ])
+    elif 'chicken' in text or 'meat' in text:
+        instructions.extend([
+            "Season the protein with salt, pepper, and spices",
+            "Heat oil in a pan over medium-high heat",
+            "Cook until golden brown on both sides",
+            "Reduce heat and continue cooking until done",
+            "Let rest for 5 minutes before serving"
+        ])
+    else:
+        # Generic instructions
+        instructions.extend([
+            "Prepare all ingredients as specified",
+            "Heat cooking oil in a pan over medium heat",
+            "Add ingredients in order of cooking time needed",
+            "Cook until everything is done to your preference",
+            "Season with salt and pepper to taste",
+            "Serve immediately while hot and enjoy"
+        ])
+    
+    return instructions
 
 
 # ============= USER ROUTES =============
