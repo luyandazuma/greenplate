@@ -1,9 +1,8 @@
 //GLOBAL CONFIGURATION
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : '/api';
+const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://b27wjqhowa.execute-api.af-south-1.amazonaws.com/dev';
 let currentUser = null;
 
 // UTILITY FUNCTIONS
-
 // Check authentication status
 function checkAuth() {
     const token = localStorage.getItem('token');
