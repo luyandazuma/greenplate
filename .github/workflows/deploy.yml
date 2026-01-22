@@ -37,7 +37,7 @@ jobs:
       - name: Install Dependencies & Package
         run: |
           echo "Packaging Backend..."
-          cd Backend
+          cd backend
           
           # Create package directory
           mkdir -p package
@@ -61,7 +61,7 @@ jobs:
           
           aws lambda update-function-code \
             --function-name ${{ env.PROJECT_NAME }}-api-${{ env.ENV_NAME }} \
-            --zip-file fileb://Backend/lambda_function.zip
+            --zip-file fileb://backend/lambda_function.zip
           
           echo "Lambda update initiated."
 
@@ -90,7 +90,7 @@ jobs:
           echo "Found API URL: $API_URL"
           
           # 3. Create config.js for the frontend
-          cd Frontend
+          cd frontend
           echo "window.config = { apiUrl: '$API_URL' };" > config.js
           
           echo "Created config.js"
@@ -101,8 +101,8 @@ jobs:
           
           echo "Deploying to Bucket: $BUCKET_NAME"
           
-          # Sync Frontend folder to S3
-          aws s3 sync ./Frontend s3://$BUCKET_NAME/ --delete
+          # Sync frontend folder to S3
+          aws s3 sync ./frontend s3://$BUCKET_NAME/ --delete
           
       - name: Invalidate CloudFront
         run: |
