@@ -1,0 +1,4 @@
+# Terraform Variables Configuration
+aws_region   = "af-south-1"
+project_name = "greenplate"
+environment  = "dev"
