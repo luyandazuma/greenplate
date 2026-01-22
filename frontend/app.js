@@ -1,5 +1,5 @@
 const API_URL = (window.config && window.config.apiUrl) 
-    || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://YOUR_API_GATEWAY_URL_HERE.execute-api.af-south-1.amazonaws.com/dev');
+    || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://b89r22hza7.execute-api.af-south-1.amazonaws.com/dev');
 
 let currentUser = null;
 
