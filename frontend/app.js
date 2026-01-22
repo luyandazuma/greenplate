@@ -1,8 +1,12 @@
-//GLOBAL CONFIGURATION
-const API_URL = window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://b27wjqhowa.execute-api.af-south-1.amazonaws.com/dev';
+const API_URL = (window.config && window.config.apiUrl) 
+    || (window.location.hostname === 'localhost' ? 'http://localhost:5000/api' : 'https://YOUR_API_GATEWAY_URL_HERE.execute-api.af-south-1.amazonaws.com/dev');
+
 let currentUser = null;
 
-// UTILITY FUNCTIONS
+console.log('Using API URL:', API_URL);
+
+// ============= UTILITY FUNCTIONS =============
+
 // Check authentication status
 function checkAuth() {
     const token = localStorage.getItem('token');
@@ -12,6 +16,7 @@ function checkAuth() {
         currentUser = { token, username };
         return true;
     }
+    currentUser = null;
     return false;
 }
 
@@ -21,12 +26,18 @@ function updateNavigation() {
     const registerBtn = document.getElementById('registerBtn');
     const accountBtn = document.getElementById('accountBtn');
     const logoutBtn = document.getElementById('logoutBtn');
+    const isLoggedIn = checkAuth();
     
-    if (checkAuth()) {
+    if (isLoggedIn) {
         if (loginBtn) loginBtn.classList.add('hidden');
         if (registerBtn) registerBtn.classList.add('hidden');
         if (accountBtn) accountBtn.classList.remove('hidden');
         if (logoutBtn) logoutBtn.classList.remove('hidden');
+    } else {
+        if (loginBtn) loginBtn.classList.remove('hidden');
+        if (registerBtn) registerBtn.classList.remove('hidden');
+        if (accountBtn) accountBtn.classList.add('hidden');
+        if (logoutBtn) logoutBtn.classList.add('hidden');
     }
 }
 
@@ -34,6 +45,7 @@ function updateNavigation() {
 function logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
+    currentUser = null;
     window.location.href = 'index.html';
 }
 
@@ -54,7 +66,7 @@ function hideError(elementId) {
     }
 }
 
-// INDEX.HTML FUNCTIONS
+// ============= INDEX.HTML FUNCTIONS =============
 
 // Load recipes from API
 async function loadRecipes(searchQuery = '') {
@@ -72,6 +84,8 @@ async function loadRecipes(searchQuery = '') {
             : `${API_URL}/recipes`;
         
         const response = await fetch(url);
+        if (!response.ok) throw new Error('Network response was not ok');
+        
         const recipes = await response.json();
 
         recipes.forEach(recipe => {
@@ -84,7 +98,7 @@ async function loadRecipes(searchQuery = '') {
         }
     } catch (error) {
         console.error('Error loading recipes:', error);
-        grid.innerHTML = '<div class="col-span-full text-center py-12 text-red-500">Error loading recipes. Please try again.</div>';
+        grid.innerHTML = '<div class="col-span-full text-center py-12 text-red-500">Error loading recipes. Is the backend running?</div>';
     } finally {
         loading.classList.add('hidden');
     }
@@ -93,7 +107,7 @@ async function loadRecipes(searchQuery = '') {
 // Create recipe card element
 function createRecipeCard(recipe) {
     const card = document.createElement('div');
-    card.className = 'recipe-card bg-white rounded-xl shadow-md overflow-hidden cursor-pointer';
+    card.className = 'recipe-card bg-white rounded-xl shadow-md overflow-hidden cursor-pointer transform hover:scale-105 transition duration-200';
     card.innerHTML = `
         <div class="h-48 bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center text-6xl">
             ${recipe.emoji}
@@ -125,7 +139,7 @@ async function showRecipeModal(recipe) {
     if (!modal || !content) return;
     
     try {
-        const response = await fetch(`${API_URL}/recipes/${recipe.id}`);
+        const response = await fetch(`${API_URL}/recipes/${recipe.recipe_id}`);
         const fullRecipe = await response.json();
         
         const ingredientsList = fullRecipe.ingredients.map(ing => 
@@ -138,6 +152,8 @@ async function showRecipeModal(recipe) {
         const instructionsList = fullRecipe.instructions.map((inst, idx) => 
             `<li class="mb-3"><span class="font-semibold text-emerald-600">${idx + 1}.</span> ${inst}</li>`
         ).join('');
+
+        const isLoggedIn = checkAuth();
 
         content.innerHTML = `
             <div class="text-center mb-6">
@@ -163,12 +179,12 @@ async function showRecipeModal(recipe) {
                 <ol class="space-y-2">${instructionsList}</ol>
             </div>
 
-            ${currentUser ? `
+            ${isLoggedIn ? `
                 <div class="flex gap-4">
-                    <button onclick="saveRecipe(${fullRecipe.id})" class="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition">
+                    <button onclick="saveRecipe(${fullRecipe.recipe_id})" class="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition">
                         💾 Save Recipe
                     </button>
-                    <button onclick="likeRecipe(${fullRecipe.id})" class="flex-1 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
+                    <button onclick="likeRecipe(${fullRecipe.recipe_id})" class="flex-1 px-6 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
                         ❤️ Like Recipe
                     </button>
                 </div>
@@ -182,6 +198,7 @@ async function showRecipeModal(recipe) {
         modal.classList.remove('hidden');
     } catch (error) {
         console.error('Error loading recipe details:', error);
+        content.innerHTML = '<p class="text-center text-red-500">Failed to load recipe details.</p>';
     }
 }
 
@@ -195,6 +212,8 @@ function closeRecipeModal() {
 
 // Save recipe to user account
 async function saveRecipe(recipeId) {
+    if (!checkAuth()) return;
+
     try {
         const response = await fetch(`${API_URL}/user/saved`, {
             method: 'POST',
@@ -207,6 +226,9 @@ async function saveRecipe(recipeId) {
         
         if (response.ok) {
             alert('Recipe saved successfully!');
+        } else {
+            const data = await response.json();
+            alert(data.message || 'Failed to save recipe');
         }
     } catch (error) {
         console.error('Error saving recipe:', error);
@@ -216,6 +238,8 @@ async function saveRecipe(recipeId) {
 
 // Like recipe
 async function likeRecipe(recipeId) {
+    if (!checkAuth()) return;
+
     try {
         const response = await fetch(`${API_URL}/user/liked`, {
             method: 'POST',
@@ -228,6 +252,9 @@ async function likeRecipe(recipeId) {
         
         if (response.ok) {
             alert('Recipe liked successfully!');
+        } else {
+            const data = await response.json();
+            alert(data.message || 'Failed to like recipe');
         }
     } catch (error) {
         console.error('Error liking recipe:', error);
@@ -239,6 +266,8 @@ async function likeRecipe(recipeId) {
 async function loadRandomRecipe() {
     try {
         const response = await fetch(`${API_URL}/recipes/random`);
+        if (!response.ok) throw new Error('Failed to fetch');
+        
         const recipe = await response.json();
         showRecipeModal(recipe);
     } catch (error) {
@@ -247,77 +276,98 @@ async function loadRandomRecipe() {
     }
 }
 
+// Generate new recipe (AI Mock)
+async function generateRecipe() {
+    const input = document.getElementById('generateInput');
+    const btn = document.getElementById('generateBtn');
+    
+    if (!input || !input.value.trim()) return;
+    
+    const originalText = btn.innerText;
+    btn.innerText = 'Cooking...';
+    btn.disabled = true;
+
+    try {
+        const response = await fetch(`${API_URL}/recipes/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ input: input.value })
+        });
+
+        if (response.ok) {
+            const recipe = await response.json();
+            input.value = '';
+            showRecipeModal(recipe);
+            // Refresh grid to show new recipe
+            loadRecipes();
+        } else {
+            alert('Failed to generate recipe');
+        }
+    } catch (e) {
+        console.error(e);
+        alert('Error generating recipe');
+    } finally {
+        btn.innerText = originalText;
+        btn.disabled = false;
+    }
+}
+
 // Initialize index page
 function initIndexPage() {
-    checkAuth();
     updateNavigation();
     
-    // Set up logout button
     const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', logout);
-    }
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
     
-    // Set up close modal button
     const closeModal = document.getElementById('closeModal');
-    if (closeModal) {
-        closeModal.addEventListener('click', closeRecipeModal);
+    if (closeModal) closeModal.addEventListener('click', closeRecipeModal);
+    
+    // Close modal on outside click
+    const modal = document.getElementById('recipeModal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeRecipeModal();
+        });
     }
     
-    // Set up search functionality
     const searchBtn = document.getElementById('searchBtn');
     const searchInput = document.getElementById('searchInput');
     
     if (searchBtn) {
         searchBtn.addEventListener('click', () => {
-            const query = searchInput.value;
-            loadRecipes(query);
+            loadRecipes(searchInput.value);
         });
     }
     
     if (searchInput) {
         searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const query = searchInput.value;
-                loadRecipes(query);
-            }
+            if (e.key === 'Enter') loadRecipes(searchInput.value);
         });
     }
     
-    // Set up random recipe button
     const randomBtn = document.getElementById('randomBtn');
-    if (randomBtn) {
-        randomBtn.addEventListener('click', loadRandomRecipe);
-    }
+    if (randomBtn) randomBtn.addEventListener('click', loadRandomRecipe);
     
-    // Set up generate recipe button
     const generateBtn = document.getElementById('generateBtn');
     const generateInput = document.getElementById('generateInput');
     
-    if (generateBtn) {
-        generateBtn.addEventListener('click', generateRecipe);
-    }
-    
+    if (generateBtn) generateBtn.addEventListener('click', generateRecipe);
     if (generateInput) {
         generateInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                generateRecipe();
-            }
+            if (e.key === 'Enter') generateRecipe();
         });
     }
     
-    // Load initial recipes
     loadRecipes();
 }
 
-// LOGIN.HTML FUNCTIONS
+// ============= LOGIN.HTML FUNCTIONS =============
 
 async function handleLogin(event) {
     event.preventDefault();
     
     const emailOrUsername = document.getElementById('emailOrUsername').value;
     const password = document.getElementById('password').value;
-    const errorMsg = document.getElementById('errorMsg');
     const loginBtn = document.getElementById('loginBtn');
 
     hideError('errorMsg');
@@ -347,7 +397,7 @@ async function handleLogin(event) {
         }
     } catch (error) {
         console.error('Login error:', error);
-        showError('errorMsg', 'An error occurred. Please try again later.');
+        showError('errorMsg', 'Network error. Please try again later.');
     } finally {
         loginBtn.disabled = false;
         loginBtn.textContent = 'Log In';
@@ -361,7 +411,7 @@ function initLoginPage() {
     }
 }
 
-// REGISTER.HTML FUNCTIONS
+// ============= REGISTER.HTML FUNCTIONS =============
 
 async function handleRegister(event) {
     event.preventDefault();
@@ -370,31 +420,13 @@ async function handleRegister(event) {
     const username = document.getElementById('username').value;
     const password = document.getElementById('password').value;
     const confirmPassword = document.getElementById('confirmPassword').value;
-    const errorMsg = document.getElementById('errorMsg');
-    const successMsg = document.getElementById('successMsg');
     const registerBtn = document.getElementById('registerBtn');
 
     hideError('errorMsg');
     hideError('successMsg');
 
-    // Validation
     if (password !== confirmPassword) {
         showError('errorMsg', 'Passwords do not match!');
-        return;
-    }
-
-    if (password.length < 8) {
-        showError('errorMsg', 'Password must be at least 8 characters long!');
-        return;
-    }
-
-    if (username.length < 3 || username.length > 20) {
-        showError('errorMsg', 'Username must be between 3 and 20 characters!');
-        return;
-    }
-
-    if (!/^[a-zA-Z0-9]+$/.test(username)) {
-        showError('errorMsg', 'Username can only contain letters and numbers!');
         return;
     }
 
@@ -419,19 +451,18 @@ async function handleRegister(event) {
         if (response.ok) {
             const successEl = document.getElementById('successMsg');
             if (successEl) {
-                successEl.textContent = 'Account created successfully! Redirecting to login...';
+                successEl.textContent = 'Account created successfully! Redirecting...';
                 successEl.classList.remove('hidden');
             }
-            
             setTimeout(() => {
                 window.location.href = 'login.html';
             }, 2000);
         } else {
-            showError('errorMsg', data.message || 'Registration failed. Please try again.');
+            showError('errorMsg', data.message || 'Registration failed.');
         }
     } catch (error) {
         console.error('Registration error:', error);
-        showError('errorMsg', 'An error occurred. Please try again later.');
+        showError('errorMsg', 'Network error. Please try again later.');
     } finally {
         registerBtn.disabled = false;
         registerBtn.textContent = 'Create Account';
@@ -445,25 +476,16 @@ function initRegisterPage() {
     }
 }
 
-// FORGOT-PASSWORD.HTML FUNCTIONS
+// ============= FORGOT-PASSWORD.HTML FUNCTIONS =============
 
 async function handleForgotPassword(event) {
     event.preventDefault();
     
     const email = document.getElementById('email').value;
-    const errorMsg = document.getElementById('errorMsg');
-    const successMsg = document.getElementById('successMsg');
     const resetBtn = document.getElementById('resetBtn');
 
     hideError('errorMsg');
     hideError('successMsg');
-
-    // Email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-        showError('errorMsg', 'Please enter a valid email address!');
-        return;
-    }
 
     resetBtn.disabled = true;
     resetBtn.textContent = 'Sending...';
@@ -471,40 +493,25 @@ async function handleForgotPassword(event) {
     try {
         const response = await fetch(`${API_URL}/auth/forgot-password`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: email })
         });
-
-        const data = await response.json();
 
         if (response.ok) {
             const successEl = document.getElementById('successMsg');
             if (successEl) {
-                successEl.innerHTML = `
-                    <div class="flex items-start">
-                        <div class="text-xl mr-2">✅</div>
-                        <div>
-                            <p class="font-semibold mb-1">Email Sent Successfully!</p>
-                            <p class="text-sm">Check your inbox for password reset instructions. The link will expire in 1 hour.</p>
-                        </div>
-                    </div>
-                `;
+                successEl.textContent = 'Reset link sent! Redirecting...';
                 successEl.classList.remove('hidden');
             }
-            document.getElementById('resetForm').reset();
-            
-            // Redirect to login after 5 seconds
             setTimeout(() => {
                 window.location.href = 'login.html';
-            }, 5000);
+            }, 3000);
         } else {
-            showError('errorMsg', data.message || 'Unable to send reset email. Please try again.');
+            const data = await response.json();
+            showError('errorMsg', data.message || 'Failed to send reset email.');
         }
     } catch (error) {
-        console.error('Password reset error:', error);
-        showError('errorMsg', 'An error occurred. Please try again later.');
+        showError('errorMsg', 'Network error.');
     } finally {
         resetBtn.disabled = false;
         resetBtn.textContent = 'Send Reset Link';
@@ -518,49 +525,37 @@ function initForgotPasswordPage() {
     }
 }
 
-// ACCOUNT.HTML FUNCTIONS
+// ============= ACCOUNT.HTML FUNCTIONS =============
 
 function initAccountPage() {
-    // Check if user is logged in
     if (!checkAuth()) {
         window.location.href = 'login.html';
         return;
     }
     
-    // Display username
     const usernameDisplay = document.getElementById('usernameDisplay');
-    if (usernameDisplay) {
-        usernameDisplay.textContent = currentUser.username;
-    }
+    if (usernameDisplay) usernameDisplay.textContent = currentUser.username;
     
-    // Set up logout button
     const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', logout);
-    }
+    if (logoutBtn) logoutBtn.addEventListener('click', logout);
     
-    // Set up tab switching
+    // Tab switching
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
 
     tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
             const tabName = btn.dataset.tab;
-            
-            tabButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
+            tabButtons.forEach(b => b.classList.remove('active', 'text-emerald-600', 'border-emerald-600'));
+            btn.classList.add('active', 'text-emerald-600', 'border-emerald-600');
             
             tabContents.forEach(content => {
-                if (content.id === `${tabName}Tab`) {
-                    content.classList.remove('hidden');
-                } else {
-                    content.classList.add('hidden');
-                }
+                content.classList.add('hidden');
+                if (content.id === `${tabName}Tab`) content.classList.remove('hidden');
             });
         });
     });
     
-    // Load user recipes
     loadSavedRecipes();
     loadLikedRecipes();
 }
@@ -568,39 +563,29 @@ function initAccountPage() {
 async function loadSavedRecipes() {
     const container = document.getElementById('savedRecipes');
     const empty = document.getElementById('savedEmpty');
-    const loading = document.getElementById('loading');
-    
-    if (!container) return;
-    
-    loading.classList.remove('hidden');
     
     try {
         const response = await fetch(`${API_URL}/user/saved`, {
-            headers: {
-                'Authorization': `Bearer ${currentUser.token}`
-            }
+            headers: { 'Authorization': `Bearer ${currentUser.token}` }
         });
         
         const recipes = await response.json();
-        document.getElementById('savedCount').textContent = recipes.length;
+        const countEl = document.getElementById('savedCount');
+        if (countEl) countEl.textContent = recipes.length;
         
-        if (recipes.length === 0) {
+        if (!recipes.length) {
             container.classList.add('hidden');
             empty.classList.remove('hidden');
         } else {
             container.classList.remove('hidden');
             empty.classList.add('hidden');
             container.innerHTML = '';
-            
             recipes.forEach(recipe => {
-                const card = createAccountRecipeCard(recipe, 'saved');
-                container.appendChild(card);
+                container.appendChild(createAccountRecipeCard(recipe, 'saved'));
             });
         }
     } catch (error) {
         console.error('Error loading saved recipes:', error);
-    } finally {
-        loading.classList.add('hidden');
     }
 }
 
@@ -608,29 +593,24 @@ async function loadLikedRecipes() {
     const container = document.getElementById('likedRecipes');
     const empty = document.getElementById('likedEmpty');
     
-    if (!container) return;
-    
     try {
         const response = await fetch(`${API_URL}/user/liked`, {
-            headers: {
-                'Authorization': `Bearer ${currentUser.token}`
-            }
+            headers: { 'Authorization': `Bearer ${currentUser.token}` }
         });
         
         const recipes = await response.json();
-        document.getElementById('likedCount').textContent = recipes.length;
+        const countEl = document.getElementById('likedCount');
+        if (countEl) countEl.textContent = recipes.length;
         
-        if (recipes.length === 0) {
+        if (!recipes.length) {
             container.classList.add('hidden');
             empty.classList.remove('hidden');
         } else {
             container.classList.remove('hidden');
             empty.classList.add('hidden');
             container.innerHTML = '';
-            
             recipes.forEach(recipe => {
-                const card = createAccountRecipeCard(recipe, 'liked');
-                container.appendChild(card);
+                container.appendChild(createAccountRecipeCard(recipe, 'liked'));
             });
         }
     } catch (error) {
@@ -640,23 +620,23 @@ async function loadLikedRecipes() {
 
 function createAccountRecipeCard(recipe, type) {
     const card = document.createElement('div');
-    card.className = 'recipe-card bg-white rounded-xl shadow-md overflow-hidden relative';
+    card.className = 'recipe-card bg-white rounded-xl shadow-md overflow-hidden relative border border-gray-100';
     card.innerHTML = `
         <div class="h-40 bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center text-5xl">
             ${recipe.emoji}
         </div>
         <div class="p-4">
-            <h3 class="text-lg font-bold text-gray-800 mb-2">${recipe.name}</h3>
-            <div class="flex justify-between text-sm text-gray-600 mb-2">
+            <h3 class="text-lg font-bold text-gray-800 mb-2 truncate">${recipe.name}</h3>
+            <div class="flex justify-between text-sm text-gray-600 mb-4">
                 <span>⏱️ ${recipe.time}</span>
                 <span class="font-bold text-emerald-600">$${recipe.total_cost.toFixed(2)}</span>
             </div>
             <div class="flex gap-2">
-                <a href="index.html" class="flex-1 px-3 py-2 bg-emerald-500 text-white text-sm rounded-lg hover:bg-emerald-600 transition text-center">
-                    View Recipe
-                </a>
-                <button onclick="removeRecipe(${recipe.id}, '${type}')" 
-                        class="px-3 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-600 transition">
+                <button onclick="showRecipeModal({recipe_id: ${recipe.recipe_id}})" class="flex-1 px-3 py-2 bg-emerald-100 text-emerald-700 text-sm rounded-lg hover:bg-emerald-200 transition text-center font-semibold">
+                    View
+                </button>
+                <button onclick="removeRecipe(${recipe.recipe_id}, '${type}')" 
+                        class="px-3 py-2 bg-red-100 text-red-600 text-sm rounded-lg hover:bg-red-200 transition font-semibold">
                     Remove
                 </button>
             </div>
@@ -665,6 +645,7 @@ function createAccountRecipeCard(recipe, type) {
     return card;
 }
 
+// Updated: Uses recipeId 
 async function removeRecipe(recipeId, type) {
     if (!confirm('Are you sure you want to remove this recipe?')) return;
     
@@ -677,22 +658,24 @@ async function removeRecipe(recipeId, type) {
         });
         
         if (response.ok) {
-            if (type === 'saved') {
-                loadSavedRecipes();
-            } else {
-                loadLikedRecipes();
-            }
+            if (type === 'saved') loadSavedRecipes();
+            else loadLikedRecipes();
+        } else {
+            alert('Failed to remove recipe.');
         }
     } catch (error) {
         console.error('Error removing recipe:', error);
-        alert('Failed to remove recipe. Please try again.');
     }
 }
 
-// PAGE INITIALIZATION
+// ============= MAIN INIT =============
 
-// Detect which page the user is on and initialize accordingly
 document.addEventListener('DOMContentLoaded', () => {
+    window.saveRecipe = saveRecipe;
+    window.likeRecipe = likeRecipe;
+    window.showRecipeModal = showRecipeModal;
+    window.removeRecipe = removeRecipe;
+
     const path = window.location.pathname;
     const page = path.substring(path.lastIndexOf('/') + 1) || 'index.html';
     
