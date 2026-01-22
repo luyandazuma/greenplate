@@ -6,206 +6,72 @@ import hashlib
 import secrets
 import random
 import os
+import boto3
+from boto3.dynamodb.conditions import Key
+from decimal import Decimal
+import json
+from io import BytesIO
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
-# Secret key for JWT
-# Generate a random secret key if not set
-SECRET_KEY = os.environ.get('SECRET_KEY')
-if not SECRET_KEY:
-    # Generate a random secret key for development
-    SECRET_KEY = secrets.token_hex(32)
-    print(f"   WARNING: Using auto-generated SECRET_KEY for development")
-    print(f"    For production, set SECRET_KEY environment variable")
+# ============= CONFIGURATION =============
 
+SECRET_KEY = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 app.config['SECRET_KEY'] = SECRET_KEY
 
-# In-memory database (will be replaced with DynamoDB in AWS deployment)
-users_db = {}
-saved_recipes_db = {}
-liked_recipes_db = {}
+# DynamoDB Configuration
+REGION = os.environ.get('AWS_REGION_NAME', 'af-south-1')
+IS_LAMBDA = os.environ.get('AWS_EXECUTION_ENV') is not None
 
-# Sample recipe database (will be in DynamoDB in production)
-# Initialize with counter for new recipes
-recipe_id_counter = 7
+dynamodb = boto3.resource('dynamodb', region_name=REGION)
 
-recipes_db = [
-    {
-        'id': 1,
-        'name': 'Creamy Pasta Carbonara',
-        'emoji': '🍝',
-        'time': '25 min',
-        'difficulty': 'Medium',
-        'servings': 4,
-        'total_cost': 12.50,
-        'ingredients': [
-            {'name': 'Spaghetti', 'amount': '400g', 'cost': 2.50},
-            {'name': 'Bacon', 'amount': '200g', 'cost': 4.00},
-            {'name': 'Eggs', 'amount': '4 large', 'cost': 3.00},
-            {'name': 'Parmesan cheese', 'amount': '100g', 'cost': 2.50},
-            {'name': 'Black pepper', 'amount': '1 tsp', 'cost': 0.50}
-        ],
-        'instructions': [
-            'Bring a large pot of salted water to boil and cook spaghetti according to package directions',
-            'While pasta cooks, fry bacon in a large skillet until crispy',
-            'In a bowl, whisk together eggs, grated parmesan, and black pepper',
-            'Drain pasta, reserving 1 cup of pasta water',
-            'Add hot pasta to the skillet with bacon, remove from heat',
-            'Quickly stir in egg mixture, adding pasta water to create a creamy sauce',
-            'Serve immediately with extra parmesan and black pepper'
-        ]
-    },
-    {
-        'id': 2,
-        'name': 'Classic Beef Burger',
-        'emoji': '🍔',
-        'time': '20 min',
-        'difficulty': 'Easy',
-        'servings': 4,
-        'total_cost': 15.20,
-        'ingredients': [
-            {'name': 'Ground beef', 'amount': '500g', 'cost': 8.00},
-            {'name': 'Burger buns', 'amount': '4 pieces', 'cost': 2.50},
-            {'name': 'Lettuce', 'amount': '4 leaves', 'cost': 1.00},
-            {'name': 'Tomato', 'amount': '2 medium', 'cost': 1.50},
-            {'name': 'Cheese slices', 'amount': '4 slices', 'cost': 2.20}
-        ],
-        'instructions': [
-            'Divide ground beef into 4 equal portions and shape into patties',
-            'Season both sides generously with salt and pepper',
-            'Heat a grill or skillet over medium-high heat',
-            'Cook patties for 4-5 minutes per side for medium doneness',
-            'Add cheese slices in the last minute of cooking',
-            'Toast burger buns lightly on the grill',
-            'Assemble burgers with lettuce, tomato, patty, and your favorite condiments'
-        ]
-    },
-    {
-        'id': 3,
-        'name': 'Fresh Garden Salad',
-        'emoji': '🥗',
-        'time': '15 min',
-        'difficulty': 'Easy',
-        'servings': 4,
-        'total_cost': 8.30,
-        'ingredients': [
-            {'name': 'Mixed greens', 'amount': '300g', 'cost': 3.00},
-            {'name': 'Cherry tomatoes', 'amount': '200g', 'cost': 2.50},
-            {'name': 'Cucumber', 'amount': '1 large', 'cost': 1.20},
-            {'name': 'Red onion', 'amount': '1/2 medium', 'cost': 0.60},
-            {'name': 'Olive oil', 'amount': '3 tbsp', 'cost': 1.00}
-        ],
-        'instructions': [
-            'Wash and dry all vegetables thoroughly',
-            'Tear or chop mixed greens into bite-sized pieces',
-            'Halve cherry tomatoes and slice cucumber',
-            'Thinly slice red onion',
-            'Combine all vegetables in a large bowl',
-            'Drizzle with olive oil and your choice of vinegar',
-            'Season with salt and pepper, toss well and serve immediately'
-        ]
-    },
-    {
-        'id': 4,
-        'name': 'Chicken Teriyaki Bowl',
-        'emoji': '🍱',
-        'time': '35 min',
-        'difficulty': 'Medium',
-        'servings': 4,
-        'total_cost': 14.80,
-        'ingredients': [
-            {'name': 'Chicken breast', 'amount': '500g', 'cost': 7.00},
-            {'name': 'Rice', 'amount': '2 cups', 'cost': 2.00},
-            {'name': 'Soy sauce', 'amount': '1/4 cup', 'cost': 1.50},
-            {'name': 'Honey', 'amount': '2 tbsp', 'cost': 1.80},
-            {'name': 'Broccoli', 'amount': '300g', 'cost': 2.50}
-        ],
-        'instructions': [
-            'Cook rice according to package instructions',
-            'Cut chicken into bite-sized pieces',
-            'Mix soy sauce, honey, garlic, and ginger for teriyaki sauce',
-            'Cook chicken in a hot pan until golden brown',
-            'Add teriyaki sauce and simmer until chicken is glazed',
-            'Steam broccoli until tender-crisp',
-            'Serve chicken and broccoli over rice, drizzle with extra sauce'
-        ]
-    },
-    {
-        'id': 5,
-        'name': 'Margherita Pizza',
-        'emoji': '🍕',
-        'time': '30 min',
-        'difficulty': 'Medium',
-        'servings': 4,
-        'total_cost': 11.50,
-        'ingredients': [
-            {'name': 'Pizza dough', 'amount': '500g', 'cost': 3.00},
-            {'name': 'Tomato sauce', 'amount': '1 cup', 'cost': 2.00},
-            {'name': 'Mozzarella cheese', 'amount': '300g', 'cost': 4.50},
-            {'name': 'Fresh basil', 'amount': '1 bunch', 'cost': 1.50},
-            {'name': 'Olive oil', 'amount': '2 tbsp', 'cost': 0.50}
-        ],
-        'instructions': [
-            'Preheat oven to 475°F (245°C)',
-            'Roll out pizza dough into desired shape',
-            'Spread tomato sauce evenly over dough',
-            'Tear mozzarella and distribute over sauce',
-            'Drizzle with olive oil and season with salt',
-            'Bake for 12-15 minutes until crust is golden and cheese is bubbly',
-            'Top with fresh basil leaves and serve hot'
-        ]
-    },
-    {
-        'id': 6,
-        'name': 'Chocolate Chip Cookies',
-        'emoji': '🍪',
-        'time': '40 min',
-        'difficulty': 'Easy',
-        'servings': 24,
-        'total_cost': 9.20,
-        'ingredients': [
-            {'name': 'Flour', 'amount': '2 cups', 'cost': 1.50},
-            {'name': 'Butter', 'amount': '200g', 'cost': 3.00},
-            {'name': 'Sugar', 'amount': '1 cup', 'cost': 1.20},
-            {'name': 'Eggs', 'amount': '2 large', 'cost': 1.50},
-            {'name': 'Chocolate chips', 'amount': '2 cups', 'cost': 2.00}
-        ],
-        'instructions': [
-            'Preheat oven to 350°F (175°C)',
-            'Cream together butter and sugar until fluffy',
-            'Beat in eggs one at a time',
-            'Mix in flour, baking soda, and salt',
-            'Fold in chocolate chips',
-            'Drop spoonfuls of dough onto baking sheets',
-            'Bake for 10-12 minutes until edges are golden',
-            'Cool on baking sheet for 5 minutes before transferring'
-        ]
-    }
-]
+# Table names from environment
+USERS_TABLE = os.environ.get('USERS_TABLE', 'greenplate-users-dev')
+RECIPES_TABLE = os.environ.get('RECIPES_TABLE', 'greenplate-recipes-dev')
+SAVED_RECIPES_TABLE = os.environ.get('SAVED_RECIPES_TABLE', 'greenplate-saved-recipes-dev')
+LIKED_RECIPES_TABLE = os.environ.get('LIKED_RECIPES_TABLE', 'greenplate-liked-recipes-dev')
 
-# Helper function to hash passwords
+# Get table references
+users_table = dynamodb.Table(USERS_TABLE)
+recipes_table = dynamodb.Table(RECIPES_TABLE)
+saved_recipes_table = dynamodb.Table(SAVED_RECIPES_TABLE)
+liked_recipes_table = dynamodb.Table(LIKED_RECIPES_TABLE)
+
+# ============= HELPER FUNCTIONS =============
+
+def decimal_to_float(obj):
+    """Convert Decimal objects to float for JSON serialization"""
+    if isinstance(obj, Decimal):
+        return float(obj)
+    elif isinstance(obj, dict):
+        return {k: decimal_to_float(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_float(i) for i in obj]
+    return obj
+
 def hash_password(password):
+    """Hash password using SHA256"""
     return hashlib.sha256(password.encode()).hexdigest()
 
-# Helper function to generate JWT token
 def generate_token(username):
+    """Generate JWT token"""
     payload = {
         'username': username,
         'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7)
     }
     return jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
 
-# Helper function to verify JWT token
 def verify_token(token):
+    """Verify JWT token"""
     try:
         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
         return payload['username']
     except:
         return None
 
-# Authentication middleware
 def auth_required(f):
+    """Authentication decorator"""
     def decorator(*args, **kwargs):
         token = request.headers.get('Authorization')
         if not token:
@@ -221,523 +87,615 @@ def auth_required(f):
     decorator.__name__ = f.__name__
     return decorator
 
+# ============= SAMPLE DATA =============
 
-# ============= CORS PREFLIGHT HANDLER =============
-@app.route('/', methods=['OPTIONS'])
-@app.route('/<path:path>', methods=['OPTIONS'])
-def handle_options(path=''):
-    return '', 204
+SAMPLE_RECIPES = [
+    {
+        'recipe_id': 1,
+        'name': 'Creamy Pasta Carbonara',
+        'emoji': '🍝',
+        'time': '25 min',
+        'difficulty': 'Medium',
+        'servings': 4,
+        'total_cost': Decimal('12.50'),
+        'ingredients': [
+            {'name': 'Spaghetti', 'amount': '400g', 'cost': Decimal('2.50')},
+            {'name': 'Bacon', 'amount': '200g', 'cost': Decimal('4.00')},
+            {'name': 'Eggs', 'amount': '4 large', 'cost': Decimal('3.00')},
+            {'name': 'Parmesan', 'amount': '100g', 'cost': Decimal('2.50')},
+            {'name': 'Black pepper', 'amount': '1 tsp', 'cost': Decimal('0.50')}
+        ],
+        'instructions': [
+            'Boil water and cook spaghetti until al dente',
+            'Fry bacon until crispy',
+            'Whisk eggs with parmesan and pepper',
+            'Drain pasta and mix with bacon',
+            'Remove from heat and stir in egg mixture',
+            'Serve immediately with extra parmesan'
+        ]
+    },
+    {
+        'recipe_id': 2,
+        'name': 'Classic Beef Burger',
+        'emoji': '🍔',
+        'time': '20 min',
+        'difficulty': 'Easy',
+        'servings': 4,
+        'total_cost': Decimal('15.20'),
+        'ingredients': [
+            {'name': 'Ground beef', 'amount': '500g', 'cost': Decimal('8.00')},
+            {'name': 'Burger buns', 'amount': '4 pieces', 'cost': Decimal('2.50')},
+            {'name': 'Lettuce', 'amount': '4 leaves', 'cost': Decimal('1.00')},
+            {'name': 'Tomato', 'amount': '2 medium', 'cost': Decimal('1.50')},
+            {'name': 'Cheese', 'amount': '4 slices', 'cost': Decimal('2.20')}
+        ],
+        'instructions': [
+            'Shape beef into 4 equal patties',
+            'Season with salt and pepper',
+            'Grill or pan-fry for 4-5 minutes per side',
+            'Add cheese in the last minute',
+            'Toast the buns',
+            'Assemble with lettuce and tomato'
+        ]
+    },
+    {
+        'recipe_id': 3,
+        'name': 'Fresh Garden Salad',
+        'emoji': '🥗',
+        'time': '15 min',
+        'difficulty': 'Easy',
+        'servings': 4,
+        'total_cost': Decimal('8.30'),
+        'ingredients': [
+            {'name': 'Mixed greens', 'amount': '300g', 'cost': Decimal('3.00')},
+            {'name': 'Cherry tomatoes', 'amount': '200g', 'cost': Decimal('2.50')},
+            {'name': 'Cucumber', 'amount': '1 large', 'cost': Decimal('1.20')},
+            {'name': 'Red onion', 'amount': '1/2 medium', 'cost': Decimal('0.60')},
+            {'name': 'Olive oil', 'amount': '3 tbsp', 'cost': Decimal('1.00')}
+        ],
+        'instructions': [
+            'Wash and dry all vegetables',
+            'Chop vegetables into bite-sized pieces',
+            'Combine in a large bowl',
+            'Drizzle with olive oil and vinegar',
+            'Toss well and serve fresh'
+        ]
+    },
+    {
+        'recipe_id': 4,
+        'name': 'Chicken Stir Fry',
+        'emoji': '🍗',
+        'time': '30 min',
+        'difficulty': 'Medium',
+        'servings': 4,
+        'total_cost': Decimal('18.50'),
+        'ingredients': [
+            {'name': 'Chicken breast', 'amount': '600g', 'cost': Decimal('10.00')},
+            {'name': 'Mixed vegetables', 'amount': '400g', 'cost': Decimal('4.50')},
+            {'name': 'Soy sauce', 'amount': '3 tbsp', 'cost': Decimal('1.50')},
+            {'name': 'Garlic', 'amount': '4 cloves', 'cost': Decimal('0.50')},
+            {'name': 'Rice', 'amount': '2 cups', 'cost': Decimal('2.00')}
+        ],
+        'instructions': [
+            'Cut chicken into bite-sized pieces',
+            'Heat oil in wok or large pan',
+            'Cook chicken until golden brown',
+            'Add vegetables and stir fry for 5 minutes',
+            'Add soy sauce and garlic',
+            'Serve hot over steamed rice'
+        ]
+    },
+    {
+        'recipe_id': 5,
+        'name': 'Margherita Pizza',
+        'emoji': '🍕',
+        'time': '40 min',
+        'difficulty': 'Medium',
+        'servings': 4,
+        'total_cost': Decimal('14.00'),
+        'ingredients': [
+            {'name': 'Pizza dough', 'amount': '500g', 'cost': Decimal('3.00')},
+            {'name': 'Tomato sauce', 'amount': '200ml', 'cost': Decimal('2.50')},
+            {'name': 'Mozzarella', 'amount': '300g', 'cost': Decimal('6.00')},
+            {'name': 'Fresh basil', 'amount': '1 bunch', 'cost': Decimal('1.50')},
+            {'name': 'Olive oil', 'amount': '2 tbsp', 'cost': Decimal('1.00')}
+        ],
+        'instructions': [
+            'Preheat oven to 250°C (480°F)',
+            'Roll out pizza dough on floured surface',
+            'Spread tomato sauce evenly',
+            'Add torn mozzarella pieces',
+            'Bake for 12-15 minutes until crispy',
+            'Top with fresh basil and drizzle olive oil'
+        ]
+    }
+]
 
+def init_sample_recipes():
+    """Initialize sample recipes in DynamoDB if empty"""
+    try:
+        response = recipes_table.scan(Limit=1)
+        if response['Count'] == 0:
+            print("Initializing sample recipes...")
+            for recipe in SAMPLE_RECIPES:
+                recipes_table.put_item(Item=recipe)
+            print("5 sample recipes initialized")
+            return True
+        print(f" Recipes table has {response['Count']} items")
+        return True
+    except Exception as e:
+        print(f"Recipe init error: {e}")
+        return False
 
-# ============= ROOT/HEALTH CHECK =============
+# ============= ROUTES =============
+
 @app.route('/', methods=['GET'])
 def root():
     return jsonify({
         'message': 'GreenPlate Recipe API',
         'status': 'running',
-        'version': '1.0.0'
+        'version': '2.0.0',
+        'endpoints': {
+            'health': '/health',
+            'recipes': '/api/recipes',
+            'register': '/api/auth/register',
+            'login': '/api/auth/login'
+        }
     }), 200
 
 @app.route('/health', methods=['GET'])
 def health_check():
+    try:
+        response = recipes_table.scan(Limit=1)
+        db_status = 'connected'
+        recipe_count = response['Count']
+    except Exception as e:
+        db_status = f'error: {str(e)}'
+        recipe_count = 0
+    
     return jsonify({
         'status': 'healthy',
-        'timestamp': datetime.datetime.utcnow().isoformat()
+        'timestamp': datetime.datetime.utcnow().isoformat(),
+        'dynamodb': db_status,
+        'tables': {
+            'users': USERS_TABLE,
+            'recipes': RECIPES_TABLE,
+            'saved': SAVED_RECIPES_TABLE,
+            'liked': LIKED_RECIPES_TABLE
+        },
+        'recipe_count': recipe_count
     }), 200
-
 
 # ============= AUTH ROUTES =============
 
-@app.route('/api/auth/register', methods=['POST'])
+@app.route('/api/auth/register', methods=['POST', 'OPTIONS'])
 def register():
-    data = request.json
-    email = data.get('email')
-    username = data.get('username')
-    password = data.get('password')
+    if request.method == 'OPTIONS':
+        return '', 200
     
-    if not email or not username or not password:
-        return jsonify({'message': 'All fields are required'}), 400
-    
-    # Check if user already exists
-    for user_id, user in users_db.items():
-        if user['email'] == email:
-            return jsonify({'message': 'Email already registered'}), 400
-        if user['username'] == username:
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return jsonify({'message': 'No data provided'}), 400
+        
+        email = data.get('email')
+        username = data.get('username')
+        password = data.get('password')
+        
+        if not all([email, username, password]):
+            return jsonify({'message': 'All fields required'}), 400
+        
+        # Check if user exists
+        response = users_table.get_item(Key={'username': username})
+        if 'Item' in response:
             return jsonify({'message': 'Username already taken'}), 400
-    
-    # Create new user
-    user_id = str(len(users_db) + 1)
-    users_db[user_id] = {
-        'id': user_id,
-        'email': email,
-        'username': username,
-        'password': hash_password(password),
-        'created_at': datetime.datetime.utcnow().isoformat()
-    }
-    
-    return jsonify({'message': 'User registered successfully'}), 201
+        
+        # Create user
+        users_table.put_item(Item={
+            'username': username,
+            'email': email,
+            'password': hash_password(password),
+            'created_at': datetime.datetime.utcnow().isoformat()
+        })
+        
+        print(f"User registered: {username}")
+        return jsonify({
+            'message': 'User registered successfully',
+            'username': username
+        }), 201
+        
+    except Exception as e:
+        print(f"Register error: {e}")
+        return jsonify({'message': f'Registration failed: {str(e)}'}), 500
 
-
-@app.route('/api/auth/login', methods=['POST'])
+@app.route('/api/auth/login', methods=['POST', 'OPTIONS'])
 def login():
-    data = request.json
-    email_or_username = data.get('email_or_username')
-    password = data.get('password')
+    if request.method == 'OPTIONS':
+        return '', 200
     
-    if not email_or_username or not password:
-        return jsonify({'message': 'Email/username and password are required'}), 400
-    
-    hashed_password = hash_password(password)
-    
-    # Find user
-    for user_id, user in users_db.items():
-        if (user['email'] == email_or_username or user['username'] == email_or_username) and user['password'] == hashed_password:
+    try:
+        data = request.get_json(force=True, silent=True)
+        if not data:
+            return jsonify({'message': 'No data provided'}), 400
+        
+        email_or_username = data.get('email_or_username')
+        password = data.get('password')
+        
+        if not all([email_or_username, password]):
+            return jsonify({'message': 'Credentials required'}), 400
+        
+        # Try username first
+        response = users_table.get_item(Key={'username': email_or_username})
+        user = response.get('Item')
+        
+        # Try email if username not found
+        if not user:
+            response = users_table.query(
+                IndexName='EmailIndex',
+                KeyConditionExpression=Key('email').eq(email_or_username)
+            )
+            if response['Items']:
+                user = response['Items'][0]
+        
+        if user and user['password'] == hash_password(password):
             token = generate_token(user['username'])
+            print(f"Login successful: {user['username']}")
             return jsonify({
                 'token': token,
                 'username': user['username'],
                 'message': 'Login successful'
             }), 200
-    
-    return jsonify({'message': 'Invalid credentials'}), 401
+        
+        return jsonify({'message': 'Invalid credentials'}), 401
+        
+    except Exception as e:
+        print(f"Login error: {e}")
+        return jsonify({'message': f'Login failed: {str(e)}'}), 500
 
-
-@app.route('/api/auth/forgot-password', methods=['POST'])
+@app.route('/api/auth/forgot-password', methods=['POST', 'OPTIONS'])
 def forgot_password():
-    data = request.json
-    email = data.get('email')
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    data = request.get_json(force=True, silent=True)
+    email = data.get('email') if data else None
     
     if not email:
-        return jsonify({'message': 'Email is required'}), 400
+        return jsonify({'message': 'Email required'}), 400
     
-    # Check if email exists
-    user_exists = any(user['email'] == email for user in users_db.values())
-    
-    # Always return success for security (don't reveal if email exists)
+    # In production, send actual reset email
     reset_token = secrets.token_urlsafe(32)
-    
     return jsonify({
-        'message': 'If this email is registered, you will receive a password reset link',
-        'reset_token': reset_token  # In production, send this via email, not in response
+        'message': 'Password reset instructions sent to email',
+        'reset_token': reset_token  # Remove in production
     }), 200
-
 
 # ============= RECIPE ROUTES =============
 
-@app.route('/api/recipes', methods=['GET'])
+@app.route('/api/recipes', methods=['GET', 'OPTIONS'])
 def get_recipes():
-    return jsonify(recipes_db), 200
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        response = recipes_table.scan()
+        recipes = decimal_to_float(response['Items'])
+        print(f"Returning {len(recipes)} recipes")
+        return jsonify(recipes), 200
+    except Exception as e:
+        print(f"Get recipes error: {e}")
+        return jsonify([]), 500
 
-
-@app.route('/api/recipes/<int:recipe_id>', methods=['GET'])
+@app.route('/api/recipes/<int:recipe_id>', methods=['GET', 'OPTIONS'])
 def get_recipe(recipe_id):
-    recipe = next((r for r in recipes_db if r['id'] == recipe_id), None)
-    if not recipe:
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        response = recipes_table.get_item(Key={'recipe_id': recipe_id})
+        if 'Item' in response:
+            return jsonify(decimal_to_float(response['Item'])), 200
         return jsonify({'message': 'Recipe not found'}), 404
-    return jsonify(recipe), 200
+    except Exception as e:
+        print(f"Get recipe error: {e}")
+        return jsonify({'message': 'Error loading recipe'}), 500
 
-
-@app.route('/api/recipes/search', methods=['GET'])
+@app.route('/api/recipes/search', methods=['GET', 'OPTIONS'])
 def search_recipes():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     query = request.args.get('q', '').lower()
-    if not query:
-        return jsonify(recipes_db), 200
-    results = [r for r in recipes_db if query in r['name'].lower()]
-    return jsonify(results), 200
+    try:
+        response = recipes_table.scan()
+        recipes = response['Items']
+        if query:
+            recipes = [r for r in recipes if query in r.get('name', '').lower()]
+        return jsonify(decimal_to_float(recipes)), 200
+    except Exception as e:
+        print(f"Search error: {e}")
+        return jsonify([]), 500
 
-
-@app.route('/api/recipes/random', methods=['GET'])
+@app.route('/api/recipes/random', methods=['GET', 'OPTIONS'])
 def random_recipe():
-    if not recipes_db:
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        response = recipes_table.scan()
+        recipes = response['Items']
+        if recipes:
+            return jsonify(decimal_to_float(random.choice(recipes))), 200
         return jsonify({'message': 'No recipes available'}), 404
-    recipe = random.choice(recipes_db)
-    return jsonify(recipe), 200
+    except Exception as e:
+        print(f"Random recipe error: {e}")
+        return jsonify({'message': 'Error'}), 500
 
-
-# ============= RECIPE GENERATION ROUTES =============
-
-@app.route('/api/recipes/generate', methods=['POST'])
+@app.route('/api/recipes/generate', methods=['POST', 'OPTIONS'])
 def generate_recipe():
-    """
-    Generate a recipe based on user input
-    Accepts: dish name, ingredients list, or description
-    """
-    global recipe_id_counter
+    if request.method == 'OPTIONS':
+        return '', 200
     
-    data = request.json
-    user_input = data.get('input', '').strip()
-    
-    if not user_input:
-        return jsonify({'message': 'Please provide a recipe name or description'}), 400
-    
-    # Generate recipe based on user input
-    new_recipe = create_recipe_from_input(user_input, recipe_id_counter)
-    
-    # Add to database
-    recipes_db.append(new_recipe)
-    recipe_id_counter += 1
-    
-    return jsonify(new_recipe), 201
-
-
-def create_recipe_from_input(user_input, recipe_id):
-    """
-    Create a recipe structure based on user input
-    In production, this would use AI/ML service like Bedrock or OpenAI
-    For now, generates a structured recipe based on keywords
-    """
-    
-    # Parse input to determine recipe type
-    input_lower = user_input.lower()
-    
-    # Determine emoji based on keywords
-    emoji = determine_emoji(input_lower)
-    
-    # Generate recipe name
-    recipe_name = user_input.title() if len(user_input.split()) <= 5 else user_input.title()[:50]
-    
-    # Determine difficulty
-    difficulty = determine_difficulty(input_lower)
-    
-    # Determine cooking time
-    time = determine_time(input_lower, difficulty)
-    
-    # Generate ingredients based on input
-    ingredients = generate_ingredients(input_lower)
-    
-    # Calculate total cost
-    total_cost = sum(ing['cost'] for ing in ingredients)
-    
-    # Generate instructions
-    instructions = generate_instructions(input_lower, ingredients)
-    
-    # Determine servings
-    servings = determine_servings(input_lower)
-    
-    return {
-        'id': recipe_id,
-        'name': recipe_name,
-        'emoji': emoji,
-        'time': time,
-        'difficulty': difficulty,
-        'servings': servings,
-        'total_cost': round(total_cost, 2),
-        'ingredients': ingredients,
-        'instructions': instructions,
-        'user_generated': True
-    }
-
-
-def determine_emoji(text):
-    """Determine emoji based on recipe keywords"""
-    emoji_map = {
-        'pasta': '🍝', 'spaghetti': '🍝', 'noodle': '🍜',
-        'burger': '🍔', 'beef': '🍔',
-        'pizza': '🍕',
-        'salad': '🥗', 'vegetables': '🥗', 'greens': '🥗',
-        'soup': '🍲', 'stew': '🍲',
-        'chicken': '🍗', 'poultry': '🍗',
-        'fish': '🐟', 'seafood': '🦐', 'shrimp': '🦐',
-        'rice': '🍚', 'bowl': '🍱',
-        'taco': '🌮', 'burrito': '🌯',
-        'sandwich': '🥪',
-        'curry': '🍛',
-        'cake': '🎂', 'cookie': '🍪', 'dessert': '🍰',
-        'bread': '🍞', 'toast': '🍞',
-        'egg': '🥚', 'omelette': '🥚',
-        'bacon': '🥓',
-        'breakfast': '🍳',
-        'smoothie': '🥤', 'drink': '🥤',
-        'steak': '🥩', 'meat': '🥩'
-    }
-    
-    for keyword, emoji in emoji_map.items():
-        if keyword in text:
-            return emoji
-    
-    return '🍽️'  # Default
-
-
-def determine_difficulty(text):
-    """Determine difficulty based on keywords"""
-    if any(word in text for word in ['easy', 'simple', 'quick', 'basic']):
-        return 'Easy'
-    elif any(word in text for word in ['hard', 'complex', 'advanced', 'gourmet']):
-        return 'Hard'
-    else:
-        return 'Medium'
-
-
-def determine_time(text, difficulty):
-    """Estimate cooking time"""
-    if 'quick' in text or difficulty == 'Easy':
-        return f"{random.randint(10, 25)} min"
-    elif difficulty == 'Hard':
-        return f"{random.randint(45, 90)} min"
-    else:
-        return f"{random.randint(25, 50)} min"
-
-
-def determine_servings(text):
-    """Determine number of servings"""
-    if 'one' in text or 'single' in text or 'solo' in text:
-        return 1
-    elif 'two' in text or 'couple' in text:
-        return 2
-    elif 'family' in text or 'large' in text:
-        return 6
-    else:
-        return 4
-
-
-def generate_ingredients(text):
-    """Generate ingredient list based on recipe type"""
-    
-    # Common ingredients database
-    ingredient_database = {
-        'pasta': [
-            {'name': 'Pasta', 'amount': '400g', 'cost': 2.50},
-            {'name': 'Olive oil', 'amount': '3 tbsp', 'cost': 1.00},
-            {'name': 'Garlic', 'amount': '3 cloves', 'cost': 0.50},
-            {'name': 'Parmesan cheese', 'amount': '100g', 'cost': 3.50},
-            {'name': 'Salt and pepper', 'amount': 'To taste', 'cost': 0.30}
-        ],
-        'chicken': [
-            {'name': 'Chicken breast', 'amount': '500g', 'cost': 7.00},
-            {'name': 'Olive oil', 'amount': '2 tbsp', 'cost': 0.80},
-            {'name': 'Garlic powder', 'amount': '1 tsp', 'cost': 0.50},
-            {'name': 'Paprika', 'amount': '1 tsp', 'cost': 0.60},
-            {'name': 'Salt and pepper', 'amount': 'To taste', 'cost': 0.30}
-        ],
-        'salad': [
-            {'name': 'Mixed greens', 'amount': '300g', 'cost': 3.00},
-            {'name': 'Cherry tomatoes', 'amount': '200g', 'cost': 2.50},
-            {'name': 'Cucumber', 'amount': '1 large', 'cost': 1.20},
-            {'name': 'Olive oil', 'amount': '3 tbsp', 'cost': 1.00},
-            {'name': 'Lemon juice', 'amount': '2 tbsp', 'cost': 0.50}
-        ],
-        'rice': [
-            {'name': 'Rice', 'amount': '2 cups', 'cost': 2.00},
-            {'name': 'Chicken broth', 'amount': '4 cups', 'cost': 2.50},
-            {'name': 'Onion', 'amount': '1 medium', 'cost': 0.80},
-            {'name': 'Garlic', 'amount': '2 cloves', 'cost': 0.40},
-            {'name': 'Butter', 'amount': '2 tbsp', 'cost': 0.90}
-        ],
-        'soup': [
-            {'name': 'Vegetable broth', 'amount': '6 cups', 'cost': 3.00},
-            {'name': 'Mixed vegetables', 'amount': '500g', 'cost': 4.00},
-            {'name': 'Onion', 'amount': '1 large', 'cost': 1.00},
-            {'name': 'Garlic', 'amount': '3 cloves', 'cost': 0.50},
-            {'name': 'Herbs', 'amount': '1 tbsp', 'cost': 1.00}
-        ],
-        'sandwich': [
-            {'name': 'Bread', 'amount': '8 slices', 'cost': 2.50},
-            {'name': 'Deli meat', 'amount': '300g', 'cost': 5.00},
-            {'name': 'Cheese', 'amount': '4 slices', 'cost': 2.00},
-            {'name': 'Lettuce', 'amount': '4 leaves', 'cost': 0.80},
-            {'name': 'Tomato', 'amount': '1 large', 'cost': 1.20}
-        ]
-    }
-    
-    # Find matching category
-    for category, ingredients in ingredient_database.items():
-        if category in text:
-            return ingredients
-    
-    # Default generic ingredients
-    return [
-        {'name': 'Main ingredient', 'amount': '500g', 'cost': 6.00},
-        {'name': 'Olive oil', 'amount': '2 tbsp', 'cost': 0.80},
-        {'name': 'Garlic', 'amount': '2 cloves', 'cost': 0.40},
-        {'name': 'Onion', 'amount': '1 medium', 'cost': 0.80},
-        {'name': 'Herbs and spices', 'amount': 'To taste', 'cost': 1.50}
-    ]
-
-
-def generate_instructions(text, ingredients):
-    """Generate cooking instructions"""
-    
-    # Extract ingredient names for instructions
-    ingredient_names = [ing['name'].lower() for ing in ingredients]
-    
-    instructions = [
-        f"Gather all ingredients: {', '.join(ingredient_names[:3])} and others",
-        "Prepare your cooking area and preheat if needed"
-    ]
-    
-    # Add cooking steps based on recipe type
-    if 'pasta' in text or 'spaghetti' in text:
-        instructions.extend([
-            "Bring a large pot of salted water to boil",
-            "Cook pasta according to package directions until al dente",
-            "While pasta cooks, prepare the sauce in a separate pan",
-            "Drain pasta, reserving some pasta water",
-            "Combine pasta with sauce, adding pasta water if needed",
-            "Serve hot with grated cheese on top"
-        ])
-    elif 'salad' in text:
-        instructions.extend([
-            "Wash and dry all vegetables thoroughly",
-            "Chop vegetables into bite-sized pieces",
-            "Combine all vegetables in a large bowl",
-            "Prepare dressing by whisking oil and seasonings",
-            "Toss salad with dressing just before serving"
-        ])
-    elif 'soup' in text or 'stew' in text:
-        instructions.extend([
-            "Heat oil in a large pot over medium heat",
-            "Sauté aromatics until fragrant",
-            "Add main ingredients and cook briefly",
-            "Pour in broth and bring to a boil",
-            "Reduce heat and simmer for 20-30 minutes",
-            "Season to taste and serve hot"
-        ])
-    elif 'chicken' in text or 'meat' in text:
-        instructions.extend([
-            "Season the protein with salt, pepper, and spices",
-            "Heat oil in a pan over medium-high heat",
-            "Cook until golden brown on both sides",
-            "Reduce heat and continue cooking until done",
-            "Let rest for 5 minutes before serving"
-        ])
-    else:
-        # Generic instructions
-        instructions.extend([
-            "Prepare all ingredients as specified",
-            "Heat cooking oil in a pan over medium heat",
-            "Add ingredients in order of cooking time needed",
-            "Cook until everything is done to your preference",
-            "Season with salt and pepper to taste",
-            "Serve immediately while hot and enjoy"
-        ])
-    
-    return instructions
-
+    try:
+        data = request.get_json(force=True, silent=True)
+        user_input = data.get('input', '').strip() if data else ''
+        
+        if not user_input:
+            return jsonify({'message': 'Recipe name required'}), 400
+        
+        # Get max recipe_id
+        response = recipes_table.scan()
+        max_id = max([r.get('recipe_id', 0) for r in response['Items']], default=0)
+        new_id = max_id + 1
+        
+        # Generate simple recipe
+        new_recipe = {
+            'recipe_id': new_id,
+            'name': user_input.title(),
+            'emoji': '🍽️',
+            'time': '30 min',
+            'difficulty': 'Medium',
+            'servings': 4,
+            'total_cost': Decimal('12.00'),
+            'ingredients': [
+                {'name': 'Main ingredient', 'amount': '500g', 'cost': Decimal('8.00')},
+                {'name': 'Seasonings', 'amount': 'To taste', 'cost': Decimal('2.00')},
+                {'name': 'Cooking oil', 'amount': '2 tbsp', 'cost': Decimal('2.00')}
+            ],
+            'instructions': [
+                'Prepare all ingredients',
+                'Cook the main ingredient',
+                'Add seasonings to taste',
+                'Serve hot and enjoy'
+            ]
+        }
+        
+        recipes_table.put_item(Item=new_recipe)
+        print(f"Recipe generated: {new_recipe['name']}")
+        return jsonify(decimal_to_float(new_recipe)), 201
+        
+    except Exception as e:
+        print(f"Generate error: {e}")
+        return jsonify({'message': 'Generation failed'}), 500
 
 # ============= USER ROUTES =============
 
-@app.route('/api/user/saved', methods=['GET'])
+@app.route('/api/user/saved', methods=['GET', 'POST', 'OPTIONS'])
 @auth_required
-def get_saved_recipes(username):
-    user_saved = saved_recipes_db.get(username, [])
-    recipes = [r for r in recipes_db if r['id'] in user_saved]
-    return jsonify(recipes), 200
-
-
-@app.route('/api/user/saved', methods=['POST'])
-@auth_required
-def save_recipe(username):
-    data = request.json
-    recipe_id = data.get('recipe_id')
+def handle_saved_recipes(username):
+    if request.method == 'OPTIONS':
+        return '', 200
     
-    if username not in saved_recipes_db:
-        saved_recipes_db[username] = []
+    if request.method == 'GET':
+        try:
+            response = saved_recipes_table.query(
+                KeyConditionExpression=Key('username').eq(username)
+            )
+            recipe_ids = [int(item['recipe_id']) for item in response['Items']]
+            
+            recipes = []
+            for rid in recipe_ids:
+                r = recipes_table.get_item(Key={'recipe_id': rid})
+                if 'Item' in r:
+                    recipes.append(r['Item'])
+            
+            return jsonify(decimal_to_float(recipes)), 200
+        except Exception as e:
+            print(f"Get saved error: {e}")
+            return jsonify([]), 500
     
-    if recipe_id not in saved_recipes_db[username]:
-        saved_recipes_db[username].append(recipe_id)
-    
-    return jsonify({'message': 'Recipe saved successfully'}), 200
+    elif request.method == 'POST':
+        try:
+            data = request.get_json(force=True, silent=True)
+            recipe_id = data.get('recipe_id') if data else None
+            
+            if not recipe_id:
+                return jsonify({'message': 'Recipe ID required'}), 400
+            
+            saved_recipes_table.put_item(Item={
+                'username': username,
+                'recipe_id': recipe_id,
+                'saved_at': datetime.datetime.utcnow().isoformat()
+            })
+            return jsonify({'message': 'Recipe saved'}), 200
+        except Exception as e:
+            print(f"Save error: {e}")
+            return jsonify({'message': 'Save failed'}), 500
 
-
-@app.route('/api/user/saved/<int:recipe_id>', methods=['DELETE'])
+@app.route('/api/user/saved/<int:recipe_id>', methods=['DELETE', 'OPTIONS'])
 @auth_required
 def remove_saved_recipe(username, recipe_id):
-    if username in saved_recipes_db and recipe_id in saved_recipes_db[username]:
-        saved_recipes_db[username].remove(recipe_id)
-    return jsonify({'message': 'Recipe removed from saved'}), 200
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        saved_recipes_table.delete_item(Key={
+            'username': username,
+            'recipe_id': recipe_id
+        })
+        return jsonify({'message': 'Recipe removed'}), 200
+    except Exception as e:
+        print(f"Remove error: {e}")
+        return jsonify({'message': 'Remove failed'}), 500
 
-
-@app.route('/api/user/liked', methods=['GET'])
+@app.route('/api/user/liked', methods=['GET', 'POST', 'OPTIONS'])
 @auth_required
-def get_liked_recipes(username):
-    user_liked = liked_recipes_db.get(username, [])
-    recipes = [r for r in recipes_db if r['id'] in user_liked]
-    return jsonify(recipes), 200
-
-
-@app.route('/api/user/liked', methods=['POST'])
-@auth_required
-def like_recipe(username):
-    data = request.json
-    recipe_id = data.get('recipe_id')
+def handle_liked_recipes(username):
+    if request.method == 'OPTIONS':
+        return '', 200
     
-    if username not in liked_recipes_db:
-        liked_recipes_db[username] = []
+    if request.method == 'GET':
+        try:
+            response = liked_recipes_table.query(
+                KeyConditionExpression=Key('username').eq(username)
+            )
+            recipe_ids = [int(item['recipe_id']) for item in response['Items']]
+            
+            recipes = []
+            for rid in recipe_ids:
+                r = recipes_table.get_item(Key={'recipe_id': rid})
+                if 'Item' in r:
+                    recipes.append(r['Item'])
+            
+            return jsonify(decimal_to_float(recipes)), 200
+        except Exception as e:
+            print(f"Get liked error: {e}")
+            return jsonify([]), 500
     
-    if recipe_id not in liked_recipes_db[username]:
-        liked_recipes_db[username].append(recipe_id)
-    
-    return jsonify({'message': 'Recipe liked successfully'}), 200
+    elif request.method == 'POST':
+        try:
+            data = request.get_json(force=True, silent=True)
+            recipe_id = data.get('recipe_id') if data else None
+            
+            if not recipe_id:
+                return jsonify({'message': 'Recipe ID required'}), 400
+            
+            liked_recipes_table.put_item(Item={
+                'username': username,
+                'recipe_id': recipe_id,
+                'liked_at': datetime.datetime.utcnow().isoformat()
+            })
+            return jsonify({'message': 'Recipe liked'}), 200
+        except Exception as e:
+            print(f"Like error: {e}")
+            return jsonify({'message': 'Like failed'}), 500
 
-
-@app.route('/api/user/liked/<int:recipe_id>', methods=['DELETE'])
+@app.route('/api/user/liked/<int:recipe_id>', methods=['DELETE', 'OPTIONS'])
 @auth_required
 def remove_liked_recipe(username, recipe_id):
-    if username in liked_recipes_db and recipe_id in liked_recipes_db[username]:
-        liked_recipes_db[username].remove(recipe_id)
-    return jsonify({'message': 'Recipe removed from liked'}), 200
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    try:
+        liked_recipes_table.delete_item(Key={
+            'username': username,
+            'recipe_id': recipe_id
+        })
+        return jsonify({'message': 'Recipe unliked'}), 200
+    except Exception as e:
+        print(f"Unlike error: {e}")
+        return jsonify({'message': 'Unlike failed'}), 500
 
+# ============= LAMBDA HANDLER =============
 
-# Error handlers
-@app.errorhandler(404)
-def not_found(error):
-    return jsonify({'message': 'Endpoint not found'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    return jsonify({'message': 'Internal server error'}), 500
-
-
-# Lambda handler for AWS deployment
 def lambda_handler(event, context):
-    """
-    AWS Lambda handler function
-    This allows the Flask app to run on AWS Lambda with API Gateway
-    """
-    from werkzeug.wrappers import Request, Response
-    from io import BytesIO
+    """AWS Lambda handler for API Gateway proxy integration"""
+    print(f"Request: {event.get('httpMethod')} {event.get('path')}")
     
-    # Convert API Gateway event to Flask request
-    environ = {
-        'REQUEST_METHOD': event['httpMethod'],
-        'SCRIPT_NAME': '',
-        'PATH_INFO': event['path'],
-        'QUERY_STRING': '&'.join([f"{k}={v}" for k, v in event.get('queryStringParameters', {}).items()]) if event.get('queryStringParameters') else '',
-        'SERVER_NAME': 'lambda',
-        'SERVER_PORT': '443',
-        'SERVER_PROTOCOL': 'HTTP/1.1',
-        'wsgi.version': (1, 0),
-        'wsgi.url_scheme': 'https',
-        'wsgi.input': BytesIO(event.get('body', '').encode('utf-8')),
-        'wsgi.errors': BytesIO(),
-        'wsgi.multiprocess': False,
-        'wsgi.multithread': False,
-        'wsgi.run_once': False,
-    }
-    
-    # Add headers
-    for key, value in event.get('headers', {}).items():
-        key = key.upper().replace('-', '_')
-        if key not in ('CONTENT_TYPE', 'CONTENT_LENGTH'):
-            key = f'HTTP_{key}'
-        environ[key] = value
-    
-    # Get response from Flask app
-    request = Request(environ)
-    with app.request_context(environ):
-        try:
+    try:
+        # Handle OPTIONS for CORS
+        if event.get('httpMethod') == 'OPTIONS':
+            return {
+                'statusCode': 200,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                    'Access-Control-Allow-Headers': 'Content-Type,Authorization'
+                },
+                'body': ''
+            }
+        
+        # Build WSGI environ
+        http_method = event.get('httpMethod', 'GET')
+        path = event.get('path', '/')
+        query_params = event.get('queryStringParameters') or {}
+        query_string = '&'.join([f"{k}={v}" for k, v in query_params.items()])
+        
+        body = event.get('body') or ''
+        if event.get('isBase64Encoded'):
+            import base64
+            body = base64.b64decode(body).decode('utf-8')
+        
+        environ = {
+            'REQUEST_METHOD': http_method,
+            'SCRIPT_NAME': '',
+            'PATH_INFO': path,
+            'QUERY_STRING': query_string,
+            'CONTENT_TYPE': event.get('headers', {}).get('content-type', 'application/json'),
+            'CONTENT_LENGTH': str(len(body)),
+            'SERVER_NAME': 'lambda',
+            'SERVER_PORT': '443',
+            'SERVER_PROTOCOL': 'HTTP/1.1',
+            'wsgi.version': (1, 0),
+            'wsgi.url_scheme': 'https',
+            'wsgi.input': BytesIO(body.encode('utf-8')),
+            'wsgi.errors': BytesIO(),
+            'wsgi.multiprocess': False,
+            'wsgi.multithread': False,
+            'wsgi.run_once': False,
+        }
+        
+        # Add headers
+        for key, value in event.get('headers', {}).items():
+            key = key.upper().replace('-', '_')
+            if key not in ('CONTENT_TYPE', 'CONTENT_LENGTH'):
+                key = f'HTTP_{key}'
+            environ[key] = value
+        
+        # Process request through Flask
+        with app.request_context(environ):
             response = app.full_dispatch_request()
-        except Exception as e:
-            response = Response(str(e), status=500)
-    
-    # Convert Flask response to API Gateway format
-    return {
-        'statusCode': response.status_code,
-        'headers': dict(response.headers),
-        'body': response.get_data(as_text=True)
-    }
+        
+        # Build Lambda response
+        headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+            'Content-Type': 'application/json'
+        }
+        headers.update(dict(response.headers))
+        
+        result = {
+            'statusCode': response.status_code,
+            'headers': headers,
+            'body': response.get_data(as_text=True)
+        }
+        
+        print(f"Response: {response.status_code}")
+        return result
+        
+    except Exception as e:
+        print(f"❌ Lambda error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return {
+            'statusCode': 500,
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Content-Type': 'application/json'
+            },
+            'body': json.dumps({'message': f'Internal error: {str(e)}'})
+        }
 
+# Initialize recipes on Lambda cold start
+if IS_LAMBDA:
+    print("Lambda cold start - initializing...")
+    init_sample_recipes()
+    print("Lambda ready")
 
+# Local development server
 if __name__ == '__main__':
-    # For local development
+    print("Starting local development server...")
+    init_sample_recipes()
     app.run(debug=True, host='0.0.0.0', port=5000)
