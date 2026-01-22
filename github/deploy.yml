@@ -1,0 +1,124 @@
+name: Deploy GreenPlate to AWS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  AWS_REGION: af-south-1
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  deploy:
+    name: Deploy Infrastructure and Application
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      
+      - name: Install Python dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt -t package/
+          cp app.py package/
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+          terraform_wrapper: false
+      
+      - name: Terraform Init
+        run: |
+          cd terraform
+          terraform init
+      
+      - name: Terraform Plan
+        run: |
+          cd terraform
+          terraform plan
+      
+      - name: Terraform Apply
+        run: |
+          cd terraform
+          terraform apply -auto-approve
+      
+      - name: Get Terraform Outputs
+        id: terraform
+        run: |
+          cd terraform
+          echo "api_url=$(terraform output -raw api_gateway_url)" >> $GITHUB_OUTPUT
+          echo "lambda_name=$(terraform output -raw lambda_function_name)" >> $GITHUB_OUTPUT
+          echo "s3_bucket=$(terraform output -raw frontend_bucket_name)" >> $GITHUB_OUTPUT
+          echo "distribution_id=$(terraform output -raw cloudfront_distribution_id)" >> $GITHUB_OUTPUT
+          echo "cloudfront_url=$(terraform output -raw cloudfront_url)" >> $GITHUB_OUTPUT
+      
+      - name: Warm up Lambda
+        run: |
+          aws lambda invoke \
+            --function-name ${{ steps.terraform.outputs.lambda_name }} \
+            --region ${{ env.AWS_REGION }} \
+            --payload '{"httpMethod":"GET","path":"/health"}' \
+            response.json
+          cat response.json
+          rm response.json
+      
+      - name: Upload Frontend to S3
+        if: hashFiles('frontend/**') != ''
+        run: |
+          if [ -d "frontend" ]; then
+            aws s3 sync frontend/ s3://${{ steps.terraform.outputs.s3_bucket }}/ --delete
+          fi
+      
+      - name: Invalidate CloudFront Cache
+        if: hashFiles('frontend/**') != ''
+        run: |
+          if [ -d "frontend" ]; then
+            aws cloudfront create-invalidation \
+              --distribution-id ${{ steps.terraform.outputs.distribution_id }} \
+              --paths "/*"
+          fi
+      
+      - name: Test API Health
+        run: |
+          sleep 5
+          curl -f ${{ steps.terraform.outputs.api_url }}/health || exit 1
+      
+      - name: Test Recipes Endpoint
+        run: |
+          curl -f ${{ steps.terraform.outputs.api_url }}/api/recipes || exit 1
+      
+      - name: Deployment Summary
+        run: |
+          echo "================================"
+          echo "  Deployment Successful!"
+          echo "================================"
+          echo ""
+          echo "  Frontend URL:"
+          echo "   ${{ steps.terraform.outputs.cloudfront_url }}"
+          echo ""
+          echo "  API URL:"
+          echo "   ${{ steps.terraform.outputs.api_url }}"
+          echo ""
+          echo "  Lambda Function:"
+          echo "   ${{ steps.terraform.outputs.lambda_name }}"
+          echo ""
+          echo "  View logs:"
+          echo "   aws logs tail /aws/lambda/${{ steps.terraform.outputs.lambda_name }} --follow --region ${{ env.AWS_REGION }}"
+          echo ""
+          echo "================================"
