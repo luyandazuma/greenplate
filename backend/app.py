@@ -208,20 +208,41 @@ SAMPLE_RECIPES = [
             'Bake for 12-15 minutes until crispy',
             'Top with fresh basil and drizzle olive oil'
         ]
+    },
+    {
+        'recipe_id': 6,
+        'name': 'Chocolate Brownies',
+        'emoji': '🍫',
+        'time': '45 min',
+        'difficulty': 'Easy',
+        'servings': 9,
+        'total_cost': Decimal('9.50'),
+        'ingredients': [
+            {'name': 'Butter', 'amount': '200g', 'cost': Decimal('3.00')},
+            {'name': 'Dark chocolate', 'amount': '200g', 'cost': Decimal('3.50')},
+            {'name': 'Sugar', 'amount': '1 cup', 'cost': Decimal('1.00')},
+            {'name': 'Flour', 'amount': '1 cup', 'cost': Decimal('0.50')},
+            {'name': 'Eggs', 'amount': '3 large', 'cost': Decimal('1.50')}
+        ],
+        'instructions': [
+            'Preheat oven to 180°C (350°F)',
+            'Melt butter and chocolate together',
+            'Whisk eggs and sugar until fluffy',
+            'Fold in chocolate mixture and flour',
+            'Pour into baking pan',
+            'Bake for 25-30 minutes'
+        ]
     }
 ]
 
 def init_sample_recipes():
-    """Initialize sample recipes in DynamoDB if empty"""
+    """Sync sample recipes to DynamoDB"""
     try:
-        response = recipes_table.scan(Limit=1)
-        if response['Count'] == 0:
-            print("Initializing sample recipes...")
-            for recipe in SAMPLE_RECIPES:
-                recipes_table.put_item(Item=recipe)
-            print("5 sample recipes initialized")
-            return True
-        print(f" Recipes table has {response['Count']} items")
+        print("Syncing sample recipes...")
+        for recipe in SAMPLE_RECIPES:
+            recipes_table.put_item(Item=recipe)
+            
+        print(f"{len(SAMPLE_RECIPES)} sample recipes synced successfully")
         return True
     except Exception as e:
         print(f"Recipe init error: {e}")
@@ -675,7 +696,7 @@ def lambda_handler(event, context):
         return result
         
     except Exception as e:
-        print(f"❌ Lambda error: {str(e)}")
+        print(f" Lambda error: {str(e)}")
         import traceback
         traceback.print_exc()
         
