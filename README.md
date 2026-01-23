@@ -1,6 +1,8 @@
 # 🍽️ GreenPlate
 A simple recipe app that helps users stay on budget by calculating the cost of making the recipe. Built with HTML, Tailwind, JavaScript, and Python. Deployed on AWS using Terraform (IaC) and GitHub (CI/CD).
 
+<a href="https://d1xb1ra74ytqwz.cloudfront.net">🔗 Check it out!</a>
+
 ## 📋 Table of Contents
 - [About](#about)
 - [Architecture](#architecture)
@@ -21,7 +23,7 @@ GreenPlate is built on a fully serverless AWS architecture, ensuring scalability
 * **Infrastructure as Code:** All resources are provisioned using **Terraform**.
 * **CI/CD:** Automated testing and deployment pipelines via **GitHub Actions**.
 
-<img src="assets/architecture-diagram.png" alt="Architecture Diagram" width="500">
+<img src="assets/architecture-diagram.png" alt="Architecture Diagram" width="820">
 
 ## ✨ Features
 * **Recipe Discovery:** Browse and search for recipes with cost breakdowns.
@@ -32,11 +34,11 @@ GreenPlate is built on a fully serverless AWS architecture, ensuring scalability
 
 ## 📸 App UI
 * **Version 1**
-<img src="assets/index.html.png" alt="index.html" width="800">
-<img src="assets/recipe.png" alt="recipe" width="500">
-<img src="assets/register.html.png" alt="register.html" width="500">
-<img src="assets/login.html.png" alt="login.html" width="500">
-<img src="assets/account.html.png" alt="account.html" width="500">
+<img src="assets/index.html.png" alt="index.html" width="820">
+<img src="assets/recipe.png" alt="recipe" width="820">
+<img src="assets/register.html.png" alt="register.html" width="820">
+<img src="assets/login.html.png" alt="login.html" width="820">
+<img src="assets/account.html.png" alt="account.html" width="820">
 
 ## 🛠️ Tech Stack
 * **Frontend:** HTML5, CSS3 (Tailwind CSS), Vanilla JavaScript
