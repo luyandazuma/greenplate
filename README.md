@@ -1,7 +1,7 @@
 # 🍽️ GreenPlate
 A simple recipe app that helps users stay on budget by calculating the cost of making the recipe. Built with HTML, Tailwind, JavaScript, and Python. Deployed on AWS using Terraform (IaC) and GitHub (CI/CD).
 
-<a href="https://d1xb1ra74ytqwz.cloudfront.net">🔗 Check it out!</a>
+ 🔗<a href="https://d1xb1ra74ytqwz.cloudfront.net">Check it out!</a>
 
 ## 📋 Table of Contents
 - [About](#about)
