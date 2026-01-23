@@ -496,7 +496,6 @@ resource "aws_api_gateway_stage" "api" {
 }
 
 # ============= CLOUDWATCH MONITORING =============
-
 #Log Group
 resource "aws_cloudwatch_log_group" "api_logs" {
   name              = "/aws/lambda/${aws_lambda_function.api.function_name}"
@@ -526,7 +525,6 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
   threshold           = 0
   alarm_description   = "Trigger alarm if API has any errors"
   alarm_actions       = [aws_sns_topic.alerts.arn]
-
   dimensions = {
     FunctionName = aws_lambda_function.api.function_name
   }
