@@ -1,5 +1,5 @@
 # 🍽️ GreenPlate
-A simple recipe app that helps users stay on budget by calculating the cost of making the recipe. Built with HTML, Tailwind, JavaScript, and Python. Deployed on AWS using Terraform (IaC) and GitHub (CI/CD).
+The GreenPlate application utilizes a serverless AWS architecture where a static frontend hosted on S3 and delivered via CloudFront interacts with a Python-based backend API on Lambda and API Gateway, which persists data in DynamoDB tables and is monitored by CloudWatch.
 
  🔗<a href="https://d1xb1ra74ytqwz.cloudfront.net">Check it out!</a>
 
