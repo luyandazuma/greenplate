@@ -5,8 +5,8 @@ A simple recipe app that helps users stay on budget by calculating the cost of m
 - [About](#about)
 - [Architecture](#architecture)
 - [Features](#features)
-- [Tech Stack](#tech-stack)
 - [App UI](#app-ui)
+- [Tech Stack](#tech-stack)
 - [Prerequisites](#prerequisites)
 - [Local Development Setup](#local-development-setup)
 - [Deployment (AWS)](#deployment-aws)
@@ -32,7 +32,7 @@ GreenPlate is built on a fully serverless AWS architecture, ensuring scalability
 
 ## 📸 App UI
 * **Version 1**
-<img src="assets/index.html.png" alt="index.html" width="500">
+<img src="assets/index.html.png" alt="index.html" width="800">
 <img src="assets/recipe.png" alt="recipe" width="500">
 <img src="assets/register.html.png" alt="register.html" width="500">
 <img src="assets/login.html.png" alt="login.html" width="500">
@@ -117,4 +117,4 @@ Once the pipeline completes, check the "Deployment Summary" in the GitHub Action
 | `POST` | `/api/user/saved` | Save a recipe (Requires Auth) |
 
 ---
-*Built with 💚 by Luyanda Zuma with help of Claude.ai and Google Gemini*
+*Built with 💚 by Luyanda Zuma*
