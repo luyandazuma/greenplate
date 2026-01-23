@@ -495,6 +495,70 @@ resource "aws_api_gateway_stage" "api" {
   stage_name    = var.environment
 }
 
+# ============= CLOUDWATCH MONITORING =============
+
+#Log Group
+resource "aws_cloudwatch_log_group" "api_logs" {
+  name              = "/aws/lambda/${aws_lambda_function.api.function_name}"
+  retention_in_days = 14
+}
+
+# SNS Topic for Alarm Alerts
+resource "aws_sns_topic" "alerts" {
+  name = "${var.project_name}-alerts-${var.environment}"
+}
+
+resource "aws_sns_topic_subscription" "email_alert" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = "luyanda.s.zuma@gmail.com"
+}
+
+# Alarm: Trigger if Lambda fails
+resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
+  alarm_name          = "${var.project_name}-api-errors-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 300 # (5 minutes)
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Trigger alarm if API has any errors"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    FunctionName = aws_lambda_function.api.function_name
+  }
+}
+
+# Dashboard: Visual overview of API health
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = "${var.project_name}-dashboard-${var.environment}"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AWS/Lambda", "Invocations", "FunctionName", aws_lambda_function.api.function_name],
+            ["AWS/Lambda", "Errors", "FunctionName", aws_lambda_function.api.function_name, { "color": "#d13212" }]
+          ]
+          view    = "timeSeries"
+          stacked = false
+          region  = var.aws_region
+          title   = "API Traffic vs Errors"
+        }
+      }
+    ]
+  })
+}
+
 # ============= OUTPUTS =============
 
 output "frontend_bucket_name" {
