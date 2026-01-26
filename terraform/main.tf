@@ -471,7 +471,8 @@ resource "aws_api_gateway_integration_response" "proxy_options" {
 resource "aws_api_gateway_deployment" "api" {
   depends_on = [
     aws_api_gateway_integration.proxy,
-    aws_api_gateway_integration.root
+    aws_api_gateway_integration.root,
+    aws_api_gateway_integration.proxy_options
   ]
 
   rest_api_id = aws_api_gateway_rest_api.api.id
@@ -481,6 +482,10 @@ resource "aws_api_gateway_deployment" "api" {
       aws_api_gateway_resource.proxy.id,
       aws_api_gateway_method.proxy.id,
       aws_api_gateway_integration.proxy.id,
+      # These 3 lines ensure CORS changes trigger a redeploy
+      aws_api_gateway_method.proxy_options.id,
+      aws_api_gateway_integration.proxy_options.id,
+      aws_api_gateway_integration_response.proxy_options.id,
     ]))
   }
 
@@ -494,7 +499,6 @@ resource "aws_api_gateway_stage" "api" {
   rest_api_id   = aws_api_gateway_rest_api.api.id
   stage_name    = var.environment
 }
-
 # ============= CLOUDWATCH MONITORING =============
 #Log Group
 resource "aws_cloudwatch_log_group" "api_logs" {
